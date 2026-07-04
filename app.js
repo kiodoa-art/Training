@@ -18,6 +18,7 @@ let history = loadHistory();
 let pendingActivities = [];
 let demoVisible = history.activities.length === 0;
 let activeTab = 'overview';
+let trendPeriod = 'all';
 
 const $ = selector => document.querySelector(selector);
 const elements = {
@@ -35,8 +36,20 @@ $('#addPreviewButton').addEventListener('click', addPendingActivities);
 $('#hideDemoButton').addEventListener('click', () => { demoVisible = false; render(); });
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.tab)));
 document.querySelectorAll('[data-target-tab]').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.targetTab)));
+document.querySelectorAll('[data-days]').forEach(button => button.addEventListener('click', () => {
+  trendPeriod = button.dataset.days;
+  document.querySelectorAll('[data-days]').forEach(item => item.classList.toggle('is-active', item === button));
+  renderCharts(displayActivities());
+}));
 elements.fitInput.addEventListener('change', importFitSelection);
 elements.jsonInput.addEventListener('change', importJsonHistory);
+const dropZone = $('#importFitButton');
+['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.add('is-dragging'); }));
+['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.remove('is-dragging'); }));
+dropZone.addEventListener('drop', event => {
+  const files = event.dataTransfer?.files;
+  if (files?.length) importFitSelection({ target: { files, value: '' } });
+});
 window.addEventListener('online', updateConnectionBadge);
 window.addEventListener('offline', updateConnectionBadge);
 window.addEventListener('resize', debounce(() => { if (activeTab === 'trends') renderCharts(displayActivities()); }, 120));
@@ -194,6 +207,8 @@ function showPreview(activities, failures = []) {
   elements.comparison.innerHTML = comparisonMarkup(activities[0]);
   elements.addButton.disabled = activities.every(activity => findDuplicate(activity, history.activities));
   elements.preview.hidden = false;
+  $('#noImportYet').hidden = true;
+  $('#importReady').textContent = 'Preview klar';
   elements.preview.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -347,12 +362,27 @@ function renderLegacy() {
 }
 
 function renderCharts(activities) {
-  const chronological = sortNewest(activities).slice(0, 12).reverse();
-  drawChart($('#powerChart'), chronological, 'averagePower', '#42e37e');
-  drawChart($('#heartChart'), chronological, 'averageHeartRate', '#ff758f');
-  drawChart($('#distanceChart'), chronological, 'distanceKm', '#54d6e8');
-  drawChart($('#durationChart'), chronological.map(item => ({ ...item, durationMinutes: Number.isFinite(item.durationSeconds) ? item.durationSeconds / 60 : null })), 'durationMinutes', '#ffc857');
-  drawChart($('#cadenceChart'), chronological, 'averageCadence', '#9b8cff');
+  const filtered = filterActivitiesByPeriod(activities);
+  const chronological = sortNewest(filtered).slice(0, 18).reverse();
+  const withMinutes = chronological.map(item => ({ ...item, durationMinutes: Number.isFinite(item.durationSeconds) ? item.durationSeconds / 60 : null }));
+  $('#powerChartValue').textContent = formatMetric(safeAverage(filtered.map(item => item.averagePower)), 'W');
+  $('#heartChartValue').textContent = formatMetric(safeAverage(filtered.map(item => item.averageHeartRate)), 'bpm');
+  $('#distanceChartValue').textContent = formatMetric(safeAverage(filtered.map(item => item.distanceKm)), 'km');
+  $('#durationChartValue').textContent = formatDuration(safeAverage(filtered.map(item => item.durationSeconds)));
+  $('#cadenceChartValue').textContent = formatMetric(safeAverage(filtered.map(item => item.averageCadence)), 'rpm');
+  drawChart($('#powerChart'), chronological, 'averagePower', '#2563eb');
+  drawChart($('#heartChart'), chronological, 'averageHeartRate', '#e11d48');
+  drawChart($('#distanceChart'), chronological, 'distanceKm', '#0891b2');
+  drawChart($('#durationChart'), withMinutes, 'durationMinutes', '#16a34a');
+  drawChart($('#cadenceChart'), chronological, 'averageCadence', '#7c3aed');
+}
+
+function filterActivitiesByPeriod(activities) {
+  if (trendPeriod === 'all') return activities;
+  const days = Number(trendPeriod);
+  if (!Number.isFinite(days)) return activities;
+  const cutoff = Date.now() - days * 86400000;
+  return activities.filter(activity => activityTime(activity) >= cutoff);
 }
 
 function drawChart(canvas, data, key, color) {
@@ -360,15 +390,15 @@ function drawChart(canvas, data, key, color) {
   if (!rect.width) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(170 * dpr);
+  canvas.height = Math.round(155 * dpr);
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  const width = rect.width, height = 170, pad = { top: 15, right: 9, bottom: 25, left: 30 };
+  const width = rect.width, height = 155, pad = { top: 13, right: 8, bottom: 23, left: 27 };
   ctx.clearRect(0, 0, width, height);
   const points = data.map((item, index) => ({ index, value: item[key], date: item.date })).filter(point => Number.isFinite(point.value));
-  ctx.strokeStyle = '#273542'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
   for (let i = 0; i < 3; i++) { const y = pad.top + i * ((height - pad.top - pad.bottom) / 2); ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke(); }
-  if (!points.length) { ctx.fillStyle = '#71808e'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Ingen data endnu', width / 2, height / 2); return; }
+  if (!points.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Ingen data i perioden', width / 2, height / 2); return; }
   const values = points.map(point => point.value); let min = Math.min(...values), max = Math.max(...values);
   if (min === max) { min -= 1; max += 1; } else { const margin = (max - min) * .12; min -= margin; max += margin; }
   const x = index => pad.left + (data.length === 1 ? (width - pad.left - pad.right) / 2 : index * (width - pad.left - pad.right) / (data.length - 1));
@@ -378,13 +408,13 @@ function drawChart(canvas, data, key, color) {
   ctx.lineTo(x(points.at(-1).index), height - pad.bottom); ctx.lineTo(x(points[0].index), height - pad.bottom); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
   ctx.beginPath(); points.forEach((point, i) => i ? ctx.lineTo(x(point.index), y(point.value)) : ctx.moveTo(x(point.index), y(point.value))); ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
   points.forEach(point => { ctx.beginPath(); ctx.arc(x(point.index), y(point.value), 3, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
-  ctx.fillStyle = '#71808e'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
   const labels = data.length < 5 ? data : data.filter((_, index) => index === 0 || index === data.length - 1 || index === Math.floor(data.length / 2));
   labels.forEach(item => { const index = data.indexOf(item); ctx.fillText(item.date?.slice(5) || '', x(index), height - 7); });
 }
 
 function closePreview() { elements.preview.hidden = true; pendingActivities = []; }
-function showMessage(text, error = false) { elements.message.textContent = text; elements.message.classList.toggle('error', error); elements.message.hidden = false; }
+function showMessage(text, error = false) { elements.message.textContent = text; elements.message.classList.toggle('error', error); elements.message.hidden = false; $('#noImportYet').hidden = true; $('#importReady').textContent = error ? 'Kræver opmærksomhed' : 'Status opdateret'; }
 function setBusyLegacy(busy) { $('#importFitButton').disabled = busy; $('#importFitButton').textContent = busy ? 'Analyserer…' : '＋ Importer Garmin ZIP/FIT'; }
 function updateConnectionBadge() { $('#offlineBadge').textContent = navigator.onLine ? 'Klar' : 'Offline'; }
 function registerServiceWorker() { if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker kunne ikke registreres', error)); }
@@ -399,6 +429,7 @@ function validDate(value) { if (!value) return null; const date = value instance
 function sortNewest(items) { return [...items].sort((a, b) => activityTime(b) - activityTime(a)); }
 function activityTime(activity) { return Date.parse(activity.startTime || `${activity.date}T00:00:00Z`) || 0; }
 function formatDate(date) { if (!date) return 'Ukendt dato'; return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00Z`)); }
+function formatTime(startTime) { if (!startTime) return 'Tidspunkt ukendt'; const date = new Date(startTime); return Number.isNaN(date.getTime()) ? 'Tidspunkt ukendt' : new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' }).format(date); }
 function formatDuration(seconds) { if (!Number.isFinite(seconds)) return '—'; const minutes = Math.round(seconds / 60); return minutes >= 60 ? `${Math.floor(minutes / 60)} t ${minutes % 60} min` : `${minutes} min`; }
 function formatTotalDuration(seconds) { if (!Number.isFinite(seconds) || seconds === 0) return '0 t'; const hours = Math.floor(seconds / 3600); const minutes = Math.round((seconds % 3600) / 60); return `${hours} t ${minutes} min`; }
 function formatCompactTotalDuration(seconds) { if (!Number.isFinite(seconds) || seconds === 0) return '0 t'; const hours = Math.floor(seconds / 3600); const minutes = Math.round((seconds % 3600) / 60); return `${hours}t ${minutes}m`; }
@@ -421,8 +452,10 @@ function render() {
   $('#totalDuration').textContent = formatCompactTotalDuration(sum(activities, 'durationSeconds'));
   $('#totalDistance').textContent = `${round(sum(activities, 'distanceKm'), 0)} km`;
   $('#overallPower').textContent = formatMetric(safeAverage(activities.map(item => item.averagePower)), 'W');
+  $('#overallHeart').textContent = formatMetric(safeAverage(activities.map(item => item.averageHeartRate)), 'bpm');
   $('#bestPower').textContent = formatMetric(safeMax(activities.map(item => item.averagePower)), 'W');
   $('#longestRide').textContent = formatDuration(safeMax(activities.map(item => item.durationSeconds)));
+  $('#highlightLowHeart').textContent = formatMetric(safeMin(activities.map(item => item.averageHeartRate)), 'bpm');
   $('#highlightCount').textContent = activities.length;
 
   const hasActivities = activities.length > 0;
@@ -446,9 +479,11 @@ function renderRides(activities) {
   const carousel = $('#ridesCarousel');
   carousel.hidden = activities.length === 0;
   $('#rideDots').hidden = activities.length === 0;
+  $('#activitiesSection').hidden = activities.length === 0;
   if (!activities.length) {
     carousel.innerHTML = '';
     $('#rideDots').innerHTML = '';
+    $('#activitiesList').innerHTML = '';
     return;
   }
 
@@ -477,6 +512,12 @@ function renderRides(activities) {
     </article>`;
   }).join('');
   $('#rideDots').innerHTML = activities.slice(0, 12).map(() => '<i></i>').join('');
+  $('#activitiesList').innerHTML = activities.map(activity => {
+    const date = new Date(`${activity.date}T12:00:00Z`);
+    const day = new Intl.DateTimeFormat('da-DK', { day: '2-digit' }).format(date);
+    const month = new Intl.DateTimeFormat('da-DK', { month: 'short' }).format(date).replace('.', '');
+    return `<article class="activity-row"><span class="activity-date">${day}<br>${month}</span><div><strong>${formatDuration(activity.durationSeconds)} · ${formatMetric(activity.distanceKm, 'km')}</strong><small>${formatTime(activity.startTime)}${activity.notes ? ` · ${escapeHtml(activity.notes)}` : ''}</small></div><span class="activity-power">${formatMetric(activity.averagePower, 'W')}</span><b aria-hidden="true">›</b></article>`;
+  }).join('');
 }
 
 function renderTrendCards(activities) {
@@ -507,8 +548,8 @@ function setBusy(busy) {
   const button = $('#importFitButton');
   button.disabled = busy;
   button.innerHTML = busy
-    ? '<span aria-hidden="true">◌</span><span><strong>Analyserer…</strong><small>Filerne bliver på enheden</small></span>'
-    : '<span aria-hidden="true">＋</span><span><strong>Importer Garmin ZIP/FIT</strong><small>Én eller flere aktiviteter</small></span>';
+    ? '<span class="upload-icon" aria-hidden="true">◌</span><strong>Analyserer filen…</strong><small>Data bliver på enheden</small>'
+    : '<span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1 .4-10A7 7 0 0 1 21 10a4 4 0 0 1-1 7.9M12 12v8m-3-5 3-3 3 3"/></svg></span><strong>Vælg en ZIP- eller FIT-fil</strong><small>Tryk for at vælge · eller slip filen her</small>';
 }
 
 function safeMin(values) {

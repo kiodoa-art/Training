@@ -1,4 +1,4 @@
-const CACHE_NAME = 'training-history-v3-tabs';
+const CACHE_NAME = 'training-history-v4-light';
 const APP_SHELL = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './vendor/fflate.min.js', './vendor/fit-parser/fit-parser.js',

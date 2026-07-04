@@ -1,6 +1,6 @@
 # Training History PWA
 
-En statisk, installerbar mobilapp der lokalt konverterer Garmin `.fit`-filer og ZIP-arkiver med FIT-filer til en kumulativ `training-history.json`. Appen har fire mobilfaner: Overblik, Ture, Import og Udvikling.
+En lys, installerbar mobilapp der lokalt konverterer Garmin `.fit`-filer og ZIP-arkiver med FIT-filer til en kumulativ `training-history.json`. Appen har fire mobilfaner: Overblik, Ture, Import og Udvikling.
 
 ## GitHub Pages
 
