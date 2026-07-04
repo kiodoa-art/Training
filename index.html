@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="description" content="Lokal Garmin FIT/ZIP til training-history.json generator.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Training History</title>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">DIN LOKALE TRÆNINGSLOG</p>
+      <h1>Training History</h1>
+    </div>
+    <span id="offlineBadge" class="status-badge" aria-live="polite">Klar</span>
+  </header>
+
+  <main>
+    <section id="demoNotice" class="notice" hidden>
+      <div><strong>Demo-visning</strong><br><span>Eksempeldata vises kun på skærmen og eksporteres aldrig.</span></div>
+      <button id="hideDemoButton" class="text-button" type="button">Skjul</button>
+    </section>
+
+    <section class="hero-grid" aria-label="Træningsoversigt">
+      <article class="card latest-card">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow">SENESTE TRÆNING</p>
+            <h2 id="latestDate">Ingen træning endnu</h2>
+          </div>
+          <div id="latestPower" class="power-badge">—<small>W</small></div>
+        </div>
+        <div class="metric-grid">
+          <div><span>Tid</span><strong id="latestDuration">—</strong></div>
+          <div><span>Distance</span><strong id="latestDistance">—</strong></div>
+          <div><span>Gns. puls</span><strong id="latestHeartRate">—</strong></div>
+          <div><span>Kadence</span><strong id="latestCadence">—</strong></div>
+        </div>
+      </article>
+
+      <article class="card summary-card">
+        <p class="eyebrow">SAMLET STATUS</p>
+        <div class="summary-grid">
+          <div><strong id="totalActivities">0</strong><span>Aktiviteter</span></div>
+          <div><strong id="totalDuration">0 t</strong><span>Træningstid</span></div>
+          <div><strong id="totalDistance">0 km</strong><span>Distance</span></div>
+          <div><strong id="overallPower">—</strong><span>Gns. watt</span></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="actions" aria-label="Handlinger">
+      <input id="fitInput" type="file" accept=".fit,.zip,application/zip,application/octet-stream" multiple hidden>
+      <input id="jsonInput" type="file" accept=".json,application/json" hidden>
+      <button id="importFitButton" class="button button-primary" type="button">
+        <span aria-hidden="true">＋</span> Importer Garmin ZIP/FIT
+      </button>
+      <button id="importJsonButton" class="button" type="button">Importer eksisterende training-history.json</button>
+      <button id="exportButton" class="button" type="button">Eksportér training-history.json</button>
+      <button id="clearButton" class="button button-danger" type="button">Ryd lokal historik</button>
+    </section>
+
+    <section id="previewSection" class="card preview-card" hidden aria-live="polite">
+      <div class="card-heading">
+        <div><p class="eyebrow">IMPORT-PREVIEW</p><h2 id="previewTitle">Fundne aktiviteter</h2></div>
+        <button id="closePreviewButton" class="icon-button" type="button" aria-label="Luk preview">×</button>
+      </div>
+      <div id="previewList" class="preview-list"></div>
+      <div id="comparisonBox" class="comparison-box"></div>
+      <button id="addPreviewButton" class="button button-primary" type="button">Tilføj til historik</button>
+    </section>
+
+    <section id="message" class="message" hidden aria-live="polite"></section>
+
+    <section class="charts-section">
+      <div class="section-heading"><div><p class="eyebrow">UDVIKLING</p><h2>De seneste ture</h2></div></div>
+      <div class="chart-grid">
+        <article class="card chart-card"><div><h3>Watt over tid</h3><span>Gennemsnitseffekt</span></div><canvas id="powerChart" aria-label="Graf over watt"></canvas></article>
+        <article class="card chart-card"><div><h3>Puls over tid</h3><span>Gennemsnitspuls</span></div><canvas id="heartChart" aria-label="Graf over puls"></canvas></article>
+        <article class="card chart-card"><div><h3>Distance over tid</h3><span>Kilometer</span></div><canvas id="distanceChart" aria-label="Graf over distance"></canvas></article>
+        <article class="card chart-card"><div><h3>Varighed over tid</h3><span>Minutter</span></div><canvas id="durationChart" aria-label="Graf over varighed"></canvas></article>
+      </div>
+    </section>
+
+    <section class="card privacy-card">
+      <span aria-hidden="true">⌁</span>
+      <div><strong>Alt bliver på din telefon</strong><p>Filer analyseres lokalt i browseren. Ingen træningsdata sendes til en server.</p></div>
+    </section>
+  </main>
+
+  <footer>Training History · Lokal Garmin-konvertering</footer>
+  <script src="./vendor/fflate.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
