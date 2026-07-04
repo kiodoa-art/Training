@@ -17,6 +17,7 @@ const demoActivities = [
 let history = loadHistory();
 let pendingActivities = [];
 let demoVisible = history.activities.length === 0;
+let activeTab = 'overview';
 
 const $ = selector => document.querySelector(selector);
 const elements = {
@@ -32,12 +33,15 @@ $('#clearButton').addEventListener('click', clearHistory);
 $('#closePreviewButton').addEventListener('click', closePreview);
 $('#addPreviewButton').addEventListener('click', addPendingActivities);
 $('#hideDemoButton').addEventListener('click', () => { demoVisible = false; render(); });
+document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.tab)));
+document.querySelectorAll('[data-target-tab]').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.targetTab)));
 elements.fitInput.addEventListener('change', importFitSelection);
 elements.jsonInput.addEventListener('change', importJsonHistory);
 window.addEventListener('online', updateConnectionBadge);
 window.addEventListener('offline', updateConnectionBadge);
-window.addEventListener('resize', debounce(() => renderCharts(displayActivities()), 120));
+window.addEventListener('resize', debounce(() => { if (activeTab === 'trends') renderCharts(displayActivities()); }, 120));
 
+$('#topbarDate').textContent = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
 render();
 updateConnectionBadge();
 registerServiceWorker();
@@ -181,6 +185,7 @@ function dateFromFilename(name) {
 }
 
 function showPreview(activities, failures = []) {
+  switchTab('import');
   elements.previewTitle.textContent = `${activities.length} aktivitet${activities.length === 1 ? '' : 'er'} fundet`;
   elements.previewList.innerHTML = activities.map(activity => {
     const duplicate = findDuplicate(activity, history.activities);
@@ -305,7 +310,26 @@ function findDuplicate(activity, list) {
 
 function displayActivities() { return history.activities.length ? history.activities : (demoVisible ? demoActivities : []); }
 
-function render() {
+function switchTab(tabName) {
+  const panel = $(`#tab-${tabName}`);
+  const button = $(`[data-tab="${tabName}"]`);
+  if (!panel || !button) return;
+  activeTab = tabName;
+  document.querySelectorAll('.tab-panel').forEach(item => {
+    const active = item === panel;
+    item.hidden = !active;
+    item.classList.toggle('is-active', active);
+  });
+  document.querySelectorAll('[data-tab]').forEach(item => {
+    const active = item === button;
+    item.classList.toggle('is-active', active);
+    item.setAttribute('aria-selected', String(active));
+  });
+  window.scrollTo({ top: 0, behavior: 'auto' });
+  if (tabName === 'trends') requestAnimationFrame(() => renderCharts(displayActivities()));
+}
+
+function renderLegacy() {
   const activities = sortNewest(displayActivities());
   const latest = activities[0];
   elements.demoNotice.hidden = !(demoVisible && history.activities.length === 0);
@@ -328,6 +352,7 @@ function renderCharts(activities) {
   drawChart($('#heartChart'), chronological, 'averageHeartRate', '#ff758f');
   drawChart($('#distanceChart'), chronological, 'distanceKm', '#54d6e8');
   drawChart($('#durationChart'), chronological.map(item => ({ ...item, durationMinutes: Number.isFinite(item.durationSeconds) ? item.durationSeconds / 60 : null })), 'durationMinutes', '#ffc857');
+  drawChart($('#cadenceChart'), chronological, 'averageCadence', '#9b8cff');
 }
 
 function drawChart(canvas, data, key, color) {
@@ -360,7 +385,7 @@ function drawChart(canvas, data, key, color) {
 
 function closePreview() { elements.preview.hidden = true; pendingActivities = []; }
 function showMessage(text, error = false) { elements.message.textContent = text; elements.message.classList.toggle('error', error); elements.message.hidden = false; }
-function setBusy(busy) { $('#importFitButton').disabled = busy; $('#importFitButton').textContent = busy ? 'Analyserer…' : '＋ Importer Garmin ZIP/FIT'; }
+function setBusyLegacy(busy) { $('#importFitButton').disabled = busy; $('#importFitButton').textContent = busy ? 'Analyserer…' : '＋ Importer Garmin ZIP/FIT'; }
 function updateConnectionBadge() { $('#offlineBadge').textContent = navigator.onLine ? 'Klar' : 'Offline'; }
 function registerServiceWorker() { if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker kunne ikke registreres', error)); }
 function finiteNumber(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
@@ -376,6 +401,117 @@ function activityTime(activity) { return Date.parse(activity.startTime || `${act
 function formatDate(date) { if (!date) return 'Ukendt dato'; return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00Z`)); }
 function formatDuration(seconds) { if (!Number.isFinite(seconds)) return '—'; const minutes = Math.round(seconds / 60); return minutes >= 60 ? `${Math.floor(minutes / 60)} t ${minutes % 60} min` : `${minutes} min`; }
 function formatTotalDuration(seconds) { if (!Number.isFinite(seconds) || seconds === 0) return '0 t'; const hours = Math.floor(seconds / 3600); const minutes = Math.round((seconds % 3600) / 60); return `${hours} t ${minutes} min`; }
+function formatCompactTotalDuration(seconds) { if (!Number.isFinite(seconds) || seconds === 0) return '0 t'; const hours = Math.floor(seconds / 3600); const minutes = Math.round((seconds % 3600) / 60); return `${hours}t ${minutes}m`; }
 function formatMetric(value, unit) { return Number.isFinite(value) ? `${round(value, unit === 'km' ? 1 : 0)} ${unit}` : '—'; }
 function escapeHtml(text) { const node = document.createElement('span'); node.textContent = text; return node.innerHTML; }
 function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
+
+function render() {
+  const activities = sortNewest(displayActivities());
+  const latest = activities[0];
+  const isDemo = demoVisible && history.activities.length === 0;
+  elements.demoNotice.hidden = !isDemo;
+  $('#latestDate').textContent = latest ? formatDate(latest.date) : 'Ingen træning endnu';
+  $('#latestPower').innerHTML = `${latest?.averagePower ?? '—'}<small>W</small>`;
+  $('#latestDuration').textContent = latest ? formatDuration(latest.durationSeconds) : '—';
+  $('#latestDistance').textContent = latest ? formatMetric(latest.distanceKm, 'km') : '—';
+  $('#latestHeartRate').textContent = latest ? formatMetric(latest.averageHeartRate, 'bpm') : '—';
+  $('#latestCadence').textContent = latest ? formatMetric(latest.averageCadence, 'rpm') : '—';
+  $('#totalActivities').textContent = activities.length;
+  $('#totalDuration').textContent = formatCompactTotalDuration(sum(activities, 'durationSeconds'));
+  $('#totalDistance').textContent = `${round(sum(activities, 'distanceKm'), 0)} km`;
+  $('#overallPower').textContent = formatMetric(safeAverage(activities.map(item => item.averagePower)), 'W');
+  $('#bestPower').textContent = formatMetric(safeMax(activities.map(item => item.averagePower)), 'W');
+  $('#longestRide').textContent = formatDuration(safeMax(activities.map(item => item.durationSeconds)));
+  $('#highlightCount').textContent = activities.length;
+
+  const hasActivities = activities.length > 0;
+  $('#overviewEmpty').hidden = hasActivities;
+  $('.latest-card').hidden = !hasActivities;
+  $('.summary-card').hidden = !hasActivities;
+  $('.highlight-grid').closest('section').hidden = !hasActivities;
+  $('#sinceLastSection').hidden = activities.length < 2;
+  if (activities.length >= 2) $('#overviewTrendGrid').innerHTML = trendMarkup(activities[0], activities[1]);
+
+  $('#ridesDataMode').textContent = isDemo ? 'Demo-data' : '';
+  $('#trendsDataMode').textContent = isDemo ? 'Demo-data' : '';
+  renderRides(activities);
+  renderTrendCards(activities);
+  if (activeTab === 'trends') requestAnimationFrame(() => renderCharts(activities));
+}
+
+function renderRides(activities) {
+  $('#ridesCount').textContent = `${activities.length} ${activities.length === 1 ? 'tur' : 'ture'}`;
+  $('#ridesEmpty').hidden = activities.length > 0;
+  const carousel = $('#ridesCarousel');
+  carousel.hidden = activities.length === 0;
+  $('#rideDots').hidden = activities.length === 0;
+  if (!activities.length) {
+    carousel.innerHTML = '';
+    $('#rideDots').innerHTML = '';
+    return;
+  }
+
+  const bestPowerValue = safeMax(activities.map(item => item.averagePower));
+  const longestValue = safeMax(activities.map(item => item.durationSeconds));
+  const lowestHeartValue = safeMin(activities.map(item => item.averageHeartRate));
+  carousel.innerHTML = activities.map((activity, index) => {
+    const badges = [];
+    if (index === 0) badges.push('<span class="ride-badge">Nyeste</span>');
+    if (Number.isFinite(bestPowerValue) && activity.averagePower === bestPowerValue) badges.push('<span class="ride-badge">Bedste watt</span>');
+    if (Number.isFinite(longestValue) && activity.durationSeconds === longestValue) badges.push('<span class="ride-badge blue">Længste tur</span>');
+    if (Number.isFinite(lowestHeartValue) && activity.averageHeartRate === lowestHeartValue) badges.push('<span class="ride-badge blue">Laveste puls</span>');
+    return `<article class="ride-card" aria-label="Tur ${index + 1} af ${activities.length}">
+      <div class="ride-top"><div><span class="ride-date">${escapeHtml(activity.date)}</span><strong class="ride-day">${escapeHtml(formatDate(activity.date))}</strong></div><span class="ride-number">#${String(activities.length - index).padStart(2, '0')}</span></div>
+      <div class="ride-power"><strong>${activity.averagePower ?? '—'}</strong><span>gns. watt</span></div>
+      <div class="ride-primary"><div><span>Varighed</span><strong>${formatDuration(activity.durationSeconds)}</strong></div><div><span>Distance</span><strong>${formatMetric(activity.distanceKm, 'km')}</strong></div></div>
+      <div class="ride-metrics">
+        <div><span>NP</span><strong>${formatMetric(activity.normalizedPower, 'W')}</strong></div>
+        <div><span>Gns. puls</span><strong>${formatMetric(activity.averageHeartRate, 'bpm')}</strong></div>
+        <div><span>Kadence</span><strong>${formatMetric(activity.averageCadence, 'rpm')}</strong></div>
+        <div><span>Maks. watt</span><strong>${formatMetric(activity.maxPower, 'W')}</strong></div>
+        <div><span>Maks. puls</span><strong>${formatMetric(activity.maxHeartRate, 'bpm')}</strong></div>
+      </div>
+      <p class="ride-notes">${activity.notes ? escapeHtml(activity.notes) : 'Ingen noter til denne tur.'}</p>
+      <div class="badge-row">${badges.join('')}</div>
+    </article>`;
+  }).join('');
+  $('#rideDots').innerHTML = activities.slice(0, 12).map(() => '<i></i>').join('');
+}
+
+function renderTrendCards(activities) {
+  const hasActivities = activities.length > 0;
+  $('#trendsEmpty').hidden = hasActivities;
+  $('.chart-grid').hidden = !hasActivities;
+  $('#trendCardsTitle').closest('section').hidden = !hasActivities;
+  $('#trendCards').innerHTML = activities.length >= 2
+    ? trendMarkup(activities[0], activities[1])
+    : '<div><span>Seneste ændring</span><strong>Kræver mindst 2 ture</strong></div>';
+}
+
+function trendMarkup(current, previous) {
+  const trends = [
+    ['Watt', difference(current.averagePower, previous.averagePower, 'W')],
+    ['Puls', difference(current.averageHeartRate, previous.averageHeartRate, 'bpm')],
+    ['Distance', difference(current.distanceKm, previous.distanceKm, 'km', 1)],
+    ['Varighed', difference(current.durationSeconds, previous.durationSeconds, 'min', 0, 60)]
+  ];
+  return trends.map(([label, value]) => {
+    const numeric = !value.startsWith('Ikke');
+    const cssClass = numeric && value.startsWith('+') ? 'positive' : numeric && value.startsWith('-') ? 'negative' : '';
+    return `<div><span>${label} fra forrige</span><strong class="${cssClass}">${value}</strong></div>`;
+  }).join('');
+}
+
+function setBusy(busy) {
+  const button = $('#importFitButton');
+  button.disabled = busy;
+  button.innerHTML = busy
+    ? '<span aria-hidden="true">◌</span><span><strong>Analyserer…</strong><small>Filerne bliver på enheden</small></span>'
+    : '<span aria-hidden="true">＋</span><span><strong>Importer Garmin ZIP/FIT</strong><small>Én eller flere aktiviteter</small></span>';
+}
+
+function safeMin(values) {
+  const valid = values.filter(Number.isFinite);
+  return valid.length ? Math.min(...valid) : null;
+}
